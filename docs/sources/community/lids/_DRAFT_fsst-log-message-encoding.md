@@ -52,7 +52,12 @@ Other columns retain their current encodings and compression.
 
 ## Proposals
 
-### Proposal 0: Shared table with symbol offsets
+### Proposal 0: Retain plain strings with Zstd
+
+This approach preserves the current implementation.
+It retains per-string varints and requires whole-page decompression.
+
+### Proposal 1: Shared table with symbol offsets
 
 FSST acts as a value encoding.
 Message columns use `ENCODING_TYPE_FSST` with `COMPRESSION_TYPE_NONE`.
@@ -109,31 +114,24 @@ The goal of this is to be able to randomly access a string without decoding all 
 
 Each page also carries a symbol table.
 Small pages can incur substantial overhead.
+// TODO dimitarvdimitrov how big is this tradeoff? can we compare a tiny symbols table for a page with a single string value `1` and then for one with 10 values from `0` to `9` and compare what the size amplification is
 Independent pages avoid shared dictionary dependencies but require repeated table training.
 
-Intermediate stripes and incremental merges both use `tableBuffer.Message`.
-Each output page at those stages trains a fresh table.
-Benchmarks must include this repeated work.
-
 FSST can produce larger output than Zstd.
+// TODO dimitarvdimitrov we need numbers. we have numbers in fsst-go
 The experiment accepts that possibility and measures the tradeoff against decode speed.
 
-### Alternative: Retain plain strings with Zstd
-
-This approach preserves the current implementation.
-It retains per-string varints and requires whole-page decompression.
-
-### Alternative: Apply FSST to the existing length-prefixed stream
+### Proposal 2: Apply FSST to the existing length-prefixed stream
 
 This approach fits the existing compression hooks.
 It retains per-string varints and requires whole-page decompression.
-We rejected this approach.
+This is less desired because it closes the door to random access decompression.
 
-### Alternative: Compress concatenated strings with decoded offsets
+### Proposal 3: Compress concatenated strings with decoded offsets
 
 This approach removes per-string varints and preserves decoded boundaries.
 Individual strings still require whole-page decompression.
-We prefer symbol offsets because they preserve independent access.
+We prefer symbol offsets because they preserve random access decompression.
 
 ## Other Notes
 
