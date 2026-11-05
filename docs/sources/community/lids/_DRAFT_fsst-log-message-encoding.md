@@ -136,33 +136,40 @@ We prefer symbol offsets because they preserve random access decompression.
 
 ### Preliminary Go benchmark results
 
-FSST measurements from 2026-11-05 use the optimized batch kernel at fork revision `ee30e95`.
-Zstd measurements remain the earlier 2026-10-15 controls with `github.com/klauspost/compress v1.20.1`.
-Both experiments use an Apple M1 Pro, Go 1.27.1, and one benchmark worker.
-The Zstd controls do not represent a new simultaneous run against the fork.
+The page comparison from 2026-11-05 uses the optimized FSST fork at revision `ee30e95` and `github.com/klauspost/compress v1.20.1`.
+All six configurations run in the same executable and process, with an independent repeat.
+The host uses an Apple M1 Pro, Go 1.27.1, and one benchmark worker.
 
 The results below use 2,048 synthetic service-log strings, each 40–1,023 bytes long.
 FSST trains its table on 512 separate sample strings.
 Each case contains seven samples per operation, with at least 200 ms per sample.
 Rates are medians in decimal MB/s, calculated from uncompressed bytes.
-The independent FSST repeat differs by at most 1.54% in batch decode medians across all four corpora.
-The earlier Zstd experiment reports up to 6.13% variation across its full comparison.
+
+The independent repeat differs by at most 12.61% in median throughput across all page comparisons.
+That change concerns best-compression URL encode.
+All decode medians differ by less than 1.75%.
 
 | Codec and layout | Encode (MB/s) | Decode (MB/s) | Stored ratio |
 | --- | ---: | ---: | ---: |
-| FSST fork, independent strings, optimized batch decode | 465.0 | 5,192.2 | 3.33× |
-| Zstd `SpeedFastest`, blocks up to 64 KiB | 387.5 | 1,276.7 | 5.88× |
-| Zstd `SpeedDefault`, blocks up to 64 KiB | 340.0 | 1,287.9 | 5.76× |
-| Zstd `SpeedBestCompression`, blocks up to 64 KiB | 63.4 | 1,523.7 | 6.27× |
+| FSST fork, independent strings, optimized batch decode | 467.4 | 5,112.5 | 3.33× |
+| Zstd `SpeedFastest`, blocks up to 1 MiB | 368.6 | 1,363.9 | 5.87× |
+| Zstd `SpeedDefault`, blocks up to 1 MiB | 327.0 | 1,489.7 | 5.76× |
+| Zstd `SpeedBestCompression`, blocks up to 1 MiB | 72.8 | 1,844.5 | 6.59× |
 
 A larger stored ratio means less stored data.
-FSST uses approximately 1.77× as many stored bytes as the fastest Zstd block case on this corpus.
-Its measured decode throughput is approximately 4.07× higher.
+FSST uses approximately 1.76× as many stored bytes as the Zstd `SpeedFastest` case on this corpus.
+Its measured decode throughput is approximately 3.75× higher.
 The grouped Zstd cases approximate the current whole-page compression model.
 Loki page framing and reader overhead remain unmeasured.
 
+The Zstd target is 1 MiB before compression, which matches Loki's default target for log-message pages.
+Each corpus fits in one block without padding.
+The log block contains 819,418 original bytes plus 4,096 bytes of row framing.
+The earlier 64 KiB comparison used 13 separate blocks for the same rows.
+
 #### Optimized batch decode
 
+The separate kernel experiment records these earlier measurements.
 The fresh upstream batch control reaches 2,781.5 MB/s on logs.
 The fork reaches 5,192.2 MB/s, a 1.87× gain.
 Its independent repeat reaches 5,119.3 MB/s.
@@ -173,8 +180,8 @@ It reconstructs decoded offsets from actual output sizes without individual deco
 The scalar fallback preserves buffer growth and legacy error behavior.
 A capacity shortage can cause duplicate work for the current row.
 
-In the same primary fork run, generic per-string decode reaches 2,701.3 MB/s on logs.
-Checked `DecodeIntoExact` reaches 3,224.4 MB/s with individual decoded lengths.
+In the current page comparison, generic per-string decode reaches 2,712.0 MB/s on logs.
+Checked `DecodeIntoExact` reaches 3,261.4 MB/s with individual decoded lengths.
 The optimized batch kernel needs only sufficient destination capacity.
 The exact API limits each kernel call to that row's decoded length.
 The batch API exposes more capacity, so more row tails can use wide stores.
@@ -187,6 +194,7 @@ The output offset buffer contains `N+1` reusable entries.
 These counts exclude initial buffers, table construction, and input offset conversion.
 
 The log page retains 819,418 decoded bytes and 16,392 bytes of decoded offsets on the 64-bit host.
+The separate cold-buffer experiment records the following allocation costs.
 Cold decode with nil destinations records 33 allocations and approximately 4.15 MB allocated per page in both implementations.
 The fork reaches 1,998.2 MB/s in that cold-buffer test, versus 1,470.0 MB/s upstream.
 Reusable destinations avoid those repeated allocations and copies.
@@ -197,6 +205,7 @@ A singleton `DecodeBatch` call needs that compressed range and two relative offs
 A sufficient reusable scratch buffer avoids allocations.
 The random access benchmark uses the maximum row size of 1,023 bytes for all row decoders.
 
+The earlier random access experiment remains separate from the page comparison.
 For logs, warm random-order access takes 93.2 ns per row with the fork, versus 154.2 ns with upstream batch decode.
 Fork generic decode takes 150.4 ns per row, and exact decode takes 124.7 ns.
 All random access samples record zero allocations.
@@ -217,7 +226,10 @@ Its location in the Loki page format remains open.
 The optimized kernel does not change the compressed payload or symbol table.
 
 The Zstd blocks contain two-byte string lengths.
-Their directory costs eight bytes per block, plus a final four-byte offset.
+The single-block directory costs 12 bytes per corpus.
+Zstd decode records zero, two, or six allocations per timed sample, across many repeated sweeps.
+The nonzero samples allocate 136 or 456 bytes in total.
+
 Zstd frame checksums remain enabled.
 The FSST benchmark adds no checksum.
 These differences prevent direct comparison with the final Loki serialized format.
@@ -227,10 +239,11 @@ Fresh training for each Loki output page remains outside these measurements.
 Loki ingestion and selective-query performance remain unmeasured.
 Only ARM64 throughput is measured for the optimized kernel.
 
-The FSST raw samples reside in `results/kernel-upstream.json`, `results/kernel.json`, and `results/kernel-repeat.json`.
-The access samples reside in `results/kernel-access.log` and `results/kernel-upstream-access.log`.
-The earlier Zstd samples remain in `results/tuned.json` and `results/repeat.json`.
-The original HTML report records the earlier experiment and excludes the optimized fork.
+The current page samples reside in `results/pages-1mib.json` and `results/pages-1mib-repeat.json`.
+The audit and summary reside in `results/pages-1mib-summary.json`.
+The earlier kernel samples remain in `results/kernel-upstream.json`, `results/kernel.json`, and `results/kernel-repeat.json`.
+The access samples remain in `results/kernel-access.log` and `results/kernel-upstream-access.log`.
+The original HTML report records the earlier experiment with 64 KiB blocks and excludes the optimized fork.
 
 ### Integration
 
