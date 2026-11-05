@@ -29,10 +29,9 @@ FSST uses a trained table of symbols to compress strings.
 Each symbol represents up to eight bytes.
 Multiple strings can share one table and remain independently decodable.
 
-This proposal uses [axiomhq/fsst](https://github.com/axiomhq/fsst).
-
-// TODO dimitarvdimitrov remove or mvoe
-[//]: # (The [batch APIs]&#40;https://github.com/axiomhq/fsst/blob/127a94cb9aecfa9b173a30a79aaf907efd132242/table.go&#41; provide compressed bytes and offsets for independent strings.)
+The optimized benchmarks use [the FSST fork at revision `ee30e95`](https://github.com/dimitarvdimitrov/fsst/commit/ee30e95db62e).
+The fork starts from [axiomhq/fsst revision `392aa0d`](https://github.com/axiomhq/fsst/tree/392aa0d5eac7621f855b80df1fd6dc71f204a94f).
+It adapts `DecodeBatch` to the existing checked eight-symbol kernel.
 
 ## Problem Statement
 
@@ -137,52 +136,101 @@ We prefer symbol offsets because they preserve random access decompression.
 
 ### Preliminary Go benchmark results
 
-The standalone `fsst-go` prototype at commit `a166238` contains measurements from 2026-10-15.
-The host uses an Apple M1 Pro CPU with Go 1.27.1 and one benchmark worker.
-Measurements use [FSST revision `392aa0d`](https://github.com/axiomhq/fsst/tree/392aa0d5eac7621f855b80df1fd6dc71f204a94f) and `github.com/klauspost/compress v1.20.1`.
-The batch API link above identifies a separate FSST revision.
+FSST measurements from 2026-11-05 use the optimized batch kernel at fork revision `ee30e95`.
+Zstd measurements remain the earlier 2026-10-15 controls with `github.com/klauspost/compress v1.20.1`.
+Both experiments use an Apple M1 Pro, Go 1.27.1, and one benchmark worker.
+The Zstd controls do not represent a new simultaneous run against the fork.
 
 The results below use 2,048 synthetic service-log strings, each 40–1,023 bytes long.
 FSST trains its table on 512 separate sample strings.
-Each case has seven samples per operation, with at least 200 ms per sample.
+Each case contains seven samples per operation, with at least 200 ms per sample.
 Rates are medians in decimal MB/s, calculated from uncompressed bytes.
-An independent repeat differed by up to 6.13% in median throughput across the full benchmark.
+The independent FSST repeat differs by at most 1.54% in batch decode medians across all four corpora.
+The earlier Zstd experiment reports up to 6.13% variation across its full comparison.
 
 | Codec and layout | Encode (MB/s) | Decode (MB/s) | Stored ratio |
 | --- | ---: | ---: | ---: |
-| FSST, independent strings, unknown decoded lengths | 457.0 | 2,664.5 | 3.22× |
+| FSST fork, independent strings, optimized batch decode | 465.0 | 5,192.2 | 3.33× |
 | Zstd `SpeedFastest`, blocks up to 64 KiB | 387.5 | 1,276.7 | 5.88× |
 | Zstd `SpeedDefault`, blocks up to 64 KiB | 340.0 | 1,287.9 | 5.76× |
 | Zstd `SpeedBestCompression`, blocks up to 64 KiB | 63.4 | 1,523.7 | 6.27× |
 
 A larger stored ratio means less stored data.
-FSST uses approximately 1.8× as many stored bytes as the fastest Zstd block case on this corpus.
-Its decode throughput is approximately 2.1× higher.
+FSST uses approximately 1.77× as many stored bytes as the fastest Zstd block case on this corpus.
+Its measured decode throughput is approximately 4.07× higher.
 The grouped Zstd cases approximate the current whole-page compression model.
 Loki page framing and reader overhead remain unmeasured.
 
-The FSST row uses `Table.Decode`, which requires no original string length.
-A separate `DecodeIntoExact` case reaches 3,193.3 MB/s, but requires a known decoded length.
-The proposed layout does not store that length.
+#### Optimized batch decode
 
-These are steady-state rates with reusable codec instances and destination buffers.
-The throughput timer excludes table training and construction.
-Fresh training for each Loki output page remains outside these measurements.
-Loki ingestion and selective-query performance remain unmeasured.
+The fresh upstream batch control reaches 2,781.5 MB/s on logs.
+The fork reaches 5,192.2 MB/s, a 1.87× gain.
+Its independent repeat reaches 5,119.3 MB/s.
+Batch speedups across logs, URLs, prose, and random text range from 1.85× to 1.90×.
+
+The fork calls the checked eight-symbol kernel with each compressed range and the remaining page capacity.
+It reconstructs decoded offsets from actual output sizes without individual decoded lengths.
+The scalar fallback preserves buffer growth and legacy error behavior.
+A capacity shortage can cause duplicate work for the current row.
+
+In the same primary fork run, generic per-string decode reaches 2,701.3 MB/s on logs.
+Checked `DecodeIntoExact` reaches 3,224.4 MB/s with individual decoded lengths.
+The optimized batch kernel needs only sufficient destination capacity.
+The exact API limits each kernel call to that row's decoded length.
+The batch API exposes more capacity, so more row tails can use wide stores.
+
+#### Allocation and random access
+
+Every timed reusable batch decode sample records zero allocations and zero allocated bytes.
+The destination capacity equals the total decoded page size, with no extra padding.
+The output offset buffer contains `N+1` reusable entries.
+These counts exclude initial buffers, table construction, and input offset conversion.
+
+The log page retains 819,418 decoded bytes and 16,392 bytes of decoded offsets on the 64-bit host.
+Cold decode with nil destinations records 33 allocations and approximately 4.15 MB allocated per page in both implementations.
+The fork reaches 1,998.2 MB/s in that cold-buffer test, versus 1,470.0 MB/s upstream.
+Reusable destinations avoid those repeated allocations and copies.
+Loki allocator integration remains unmeasured.
+
+Compressed offsets still permit direct access to one selected string.
+A singleton `DecodeBatch` call needs that compressed range and two relative offsets, without prior rows or an individual decoded length.
+A sufficient reusable scratch buffer avoids allocations.
+The random access benchmark uses the maximum row size of 1,023 bytes for all row decoders.
+
+For logs, warm random-order access takes 93.2 ns per row with the fork, versus 154.2 ns with upstream batch decode.
+Fork generic decode takes 150.4 ns per row, and exact decode takes 124.7 ns.
+All random access samples record zero allocations.
+The test excludes storage I/O and persistent output copies.
+The current Loki reader still needs a separate change to skip decode for unselected rows.
+
+#### Storage accounting and limits
 
 Stored ratios include serialized models and boundary metadata.
-The benchmark charges FSST eight index bytes per string, plus a final four-byte offset.
-This includes an original-length field that generic decode ignores.
-The proposed layout uses four bytes per symbol offset and needs its own size measurements.
+The measured FSST batch directory contains `uint32[N+1]` compressed offsets and one `uint32` total decoded size.
+It costs 8,200 bytes for 2,048 rows, versus 16,388 bytes for the earlier directory with individual decoded lengths.
+The payload contains 236,999 bytes, and the serialized table contains 812 bytes.
+Total stored size is 246,011 bytes for 819,418 original bytes.
+
+The proposed page sketch does not yet include the four-byte total decoded size from this measured layout.
+That field permits exact allocation for full-page decode without individual decoded lengths.
+Its location in the Loki page format remains open.
+The optimized kernel does not change the compressed payload or symbol table.
 
 The Zstd blocks contain two-byte string lengths.
 Their directory costs eight bytes per block, plus a final four-byte offset.
 Zstd frame checksums remain enabled.
-The FSST case adds no checksum.
-These differences prevent direct comparison with the proposed serialized page format.
+The FSST benchmark adds no checksum.
+These differences prevent direct comparison with the final Loki serialized format.
 
-The prototype contains raw samples in `results/tuned.json` and `results/repeat.json`.
-Its `results/report.html` includes the full comparison and observed sample ranges.
+The throughput timer excludes table training and construction.
+Fresh training for each Loki output page remains outside these measurements.
+Loki ingestion and selective-query performance remain unmeasured.
+Only ARM64 throughput is measured for the optimized kernel.
+
+The FSST raw samples reside in `results/kernel-upstream.json`, `results/kernel.json`, and `results/kernel-repeat.json`.
+The access samples reside in `results/kernel-access.log` and `results/kernel-upstream-access.log`.
+The earlier Zstd samples remain in `results/tuned.json` and `results/repeat.json`.
+The original HTML report records the earlier experiment and excludes the optimized fork.
 
 ### Integration
 
@@ -245,7 +293,7 @@ Further work must resolve:
 - How the decoder receives the number of strings.
 - How decoded buffers integrate with the existing memory allocator.
 - Whether fixed-width offsets need a more compact representation.
-- Whether later readers need stored decoded lengths for exact allocation.
+- Where the page stores its total decoded size for exact page allocation.
 
 ### String boundaries and decoded lengths illustration
 
