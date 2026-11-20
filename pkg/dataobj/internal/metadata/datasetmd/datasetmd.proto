@@ -201,6 +201,9 @@ enum EncodingType {
   // Bitmap encoding. Bitmaps efficiently store repeating sequences of unsigned
   // integers using a combination of run-length encoding and bitpacking.
   ENCODING_TYPE_BITMAP = 3;
+
+  // FSST encoding with a symbol table and string boundaries per page.
+  ENCODING_TYPE_FSST = 4;
 }
 
 // Statistics about a column or a page. All statistics are optional and are

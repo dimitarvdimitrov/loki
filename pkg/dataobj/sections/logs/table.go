@@ -242,8 +242,8 @@ func (b *tableBuffer) Message(pageSize, pageRowCount int, compressionOpts *datas
 			Physical: datasetmd.PHYSICAL_TYPE_BINARY,
 			Logical:  ColumnTypeMessage.String(),
 		},
-		Encoding:           datasetmd.ENCODING_TYPE_PLAIN,
-		Compression:        datasetmd.COMPRESSION_TYPE_ZSTD,
+		Encoding:           datasetmd.ENCODING_TYPE_FSST,
+		Compression:        datasetmd.COMPRESSION_TYPE_NONE,
 		CompressionOptions: compressionOpts,
 
 		// We explicitly don't have range stats for the message column:

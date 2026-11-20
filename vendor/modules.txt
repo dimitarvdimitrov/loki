@@ -436,6 +436,9 @@ github.com/aws/smithy-go/traits
 github.com/aws/smithy-go/transport/http
 github.com/aws/smithy-go/transport/http/internal/io
 github.com/aws/smithy-go/waiter
+# github.com/axiomhq/fsst v0.0.1 => github.com/dimitarvdimitrov/fsst v0.0.2-0.20261105123440-ee30e95db62e
+## explicit; go 1.24.5
+github.com/axiomhq/fsst
 # github.com/axiomhq/hyperloglog v0.3.0
 ## explicit; go 1.23
 github.com/axiomhq/hyperloglog
@@ -2401,3 +2404,4 @@ zombiezen.com/go/sqlite/sqlitex
 # github.com/twmb/franz-go => github.com/twmb/franz-go v1.21.7
 # github.com/twmb/franz-go/pkg/kadm => github.com/twmb/franz-go/pkg/kadm v1.18.0
 # github.com/twmb/franz-go/pkg/kmsg => github.com/twmb/franz-go/pkg/kmsg v1.13.1
+# github.com/axiomhq/fsst => github.com/dimitarvdimitrov/fsst v0.0.2-0.20261105123440-ee30e95db62e
