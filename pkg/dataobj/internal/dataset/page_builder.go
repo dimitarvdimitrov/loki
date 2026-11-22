@@ -244,6 +244,7 @@ func (b *pageBuilder) EstimatedSize() int {
 	// been flushed yet. However, encoder buffers are usually small enough that
 	// we wouldn't massively overshoot our estimate.
 	size := b.presenceBuffer.Len() + b.valuesWriter.BytesWritten()
+	// TODO dimitarvdimitrov this is ugly
 	if enc, ok := b.valuesEnc.(*fsstEncoder); ok {
 		size += enc.EstimatedSize()
 	}
@@ -303,6 +304,7 @@ func (b *pageBuilder) Flush() (*MemPage, error) {
 	checksum := crc32.Checksum(finalData.Bytes(), checksumTable)
 
 	uncompressedSize := headerSize + presenceSize + b.valuesWriter.BytesWritten()
+	// TODO dimitarvdimitrov this is egly
 	if enc, ok := b.valuesEnc.(*fsstEncoder); ok {
 		// FSST replaces compression, so statistics describe decoded string bytes.
 		uncompressedSize = headerSize + presenceSize + enc.decodedSize

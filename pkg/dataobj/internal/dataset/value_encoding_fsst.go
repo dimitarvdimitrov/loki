@@ -46,10 +46,12 @@ func (enc *fsstEncoder) EstimatedSize() int {
 	if len(enc.inputs) == 0 {
 		return 0
 	}
+	// TODO dimitarvdimitrov too many magic numbers
 	return 16 + 255*8 + 4*(2*len(enc.inputs)+1) + enc.decodedSize
 }
 
 func (enc *fsstEncoder) Flush() error {
+	// TODO dimitarvdimitrov this is too ugly
 	table := fsst.Train(enc.inputs)
 	symbols, offsets := table.EncodeBatch(nil, nil, enc.inputs)
 	if uint64(len(symbols)) > math.MaxUint32 {
@@ -102,6 +104,7 @@ func (enc *fsstEncoder) Reset(w streamio.Writer) {
 
 // fsstDecoder retains the encoded page and decodes only the requested dense batch.
 // count comes from PageDesc.ValuesCount, after construction or Reset.
+// TODO dimitarvdimitrov wtf
 type fsstDecoder struct {
 	data       []byte
 	count      int
