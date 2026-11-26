@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/dataobj/deletion"
 	"github.com/grafana/loki/v3/pkg/dataobj/logsobj"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/engine"
 	"github.com/grafana/loki/v3/pkg/scratch"
 )
@@ -31,6 +32,8 @@ type WorkerParams struct {
 	IndexobjCfg logsobj.BuilderBaseConfig
 	// LogsobjCfg controls log object construction parameters for compaction.
 	LogsobjCfg logsobj.BuilderBaseConfig
+	// DataObjLogColumnCompression selects the message encoding for each tenant. Nil uses Zstd.
+	DataObjLogColumnCompression func(string) logs.EncodingType
 }
 
 // Worker is the dataobj-compaction-worker target service. It wraps an
@@ -92,13 +95,14 @@ func NewWorker(params WorkerParams) (*Worker, error) {
 			SchedulerLookupAddress:  params.Config.SchedulerLookupAddress,
 			SchedulerLookupInterval: params.Config.SchedulerLookupInterval,
 		},
-		AdvertiseAddr:        advertiseAddr,
-		Endpoint:             params.Config.Endpoint,
-		IndexobjCfg:          params.IndexobjCfg,
-		LogsobjCfg:           params.LogsobjCfg,
-		IndexMergeObserver:   wm,
-		NewLogMergeObserver:  wm.logMergeObserver,
-		DeletionSweepMetrics: deletion.NewSweepMetrics(registerer),
+		AdvertiseAddr:               advertiseAddr,
+		Endpoint:                    params.Config.Endpoint,
+		IndexobjCfg:                 params.IndexobjCfg,
+		LogsobjCfg:                  params.LogsobjCfg,
+		DataObjLogColumnCompression: params.DataObjLogColumnCompression,
+		IndexMergeObserver:          wm,
+		NewLogMergeObserver:         wm.logMergeObserver,
+		DeletionSweepMetrics:        deletion.NewSweepMetrics(registerer),
 	}, registerer)
 	if err != nil {
 		return nil, fmt.Errorf("dataobj compaction worker: construct engine worker: %w", err)

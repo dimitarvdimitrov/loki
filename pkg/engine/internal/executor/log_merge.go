@@ -494,7 +494,12 @@ type logObjectWriter struct {
 
 // fixedLayout gives the tenant the layout of the source objects, so the output
 // builder does not use the tenant overrides.
-type fixedLayout struct{ layout streams.Layout }
+type fixedLayout struct {
+	layout          streams.Layout
+	messageEncoding logs.EncodingType
+}
+
+func (l fixedLayout) DataObjLogColumnCompression(string) logs.EncodingType { return l.messageEncoding }
 
 func (l fixedLayout) SortSchemaLabels(string) []string { return l.layout.SchemaLabels() }
 
@@ -521,7 +526,11 @@ func (c *Context) newLogObjectWriter(node *physical.LogMerge, layout streams.Lay
 
 func (w *logObjectWriter) startNewObject() error {
 	cfg := w.c.logsobjCfg
-	overrides := fixedLayout{layout: w.layout}
+	encoding := logs.EncodingTypePlain
+	if w.c.dataObjLogColumnCompression != nil {
+		encoding = w.c.dataObjLogColumnCompression(w.node.Tenant)
+	}
+	overrides := fixedLayout{layout: w.layout, messageEncoding: encoding}
 
 	sizeLeveled := dataobj.WithSizeLeveledCompaction(dataobj.SizeLeveledCompaction{Level: w.node.OutputLevel})
 	builder, err := logsobj.NewBuilder(w.node.Tenant, cfg, w.c.scratchStore, w.builderMetrics, w.c.logger, overrides, sizeLeveled)

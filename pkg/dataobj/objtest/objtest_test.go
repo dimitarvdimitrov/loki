@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/dataobj"
 	"github.com/grafana/loki/v3/pkg/dataobj/metastore"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/dataobj/sections/streams"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
@@ -262,4 +263,8 @@ func countIndexObjects(t *testing.T, builder *Builder) int {
 		return nil
 	}, objstore.WithRecursiveIter()))
 	return count
+}
+
+func (*shardOverrides) DataObjLogColumnCompression(string) logs.EncodingType {
+	return logs.EncodingTypePlain
 }

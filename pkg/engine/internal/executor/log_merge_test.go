@@ -2062,3 +2062,7 @@ func logsPageBytes(t *testing.T, bucket objstore.Bucket, tenant string, paths ..
 	}
 	return total
 }
+
+func (sortSchemaOverrides) DataObjLogColumnCompression(string) logs.EncodingType {
+	return logs.EncodingTypePlain
+}

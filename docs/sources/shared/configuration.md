@@ -4708,6 +4708,11 @@ shard_streams:
 # CLI flag: -bloom-build.enable
 [bloom_creation_enabled: <boolean> | default = false]
 
+# Experimental. Compression for new message pages for the tenant. Supported
+# values: zstd, fsst.
+# CLI flag: -limits.dataobj-log-column-compression
+[dataobj_log_column_compression: <string> | default = "zstd"]
+
 # Experimental. Whether dataobj index compaction runs for the tenant.
 # CLI flag: -dataobj-compaction.index.enable
 [dataobj_index_compaction_enabled: <boolean> | default = false]

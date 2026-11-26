@@ -29,6 +29,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.21.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.116.0
 	github.com/aws/smithy-go v1.28.9
+	github.com/axiomhq/fsst v0.0.1
 	github.com/axiomhq/hyperloglog v0.3.0
 	github.com/baidubce/bce-sdk-go v0.9.279
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
@@ -428,3 +429,6 @@ replace github.com/twmb/franz-go/pkg/kadm => github.com/twmb/franz-go/pkg/kadm v
 
 // See comment above for github.com/twmb/franz-go.
 replace github.com/twmb/franz-go/pkg/kmsg => github.com/twmb/franz-go/pkg/kmsg v1.15.0
+
+// Use the checked batch decoder from the draft FSST benchmarks.
+replace github.com/axiomhq/fsst => github.com/dimitarvdimitrov/fsst v0.0.2-0.20261105123440-ee30e95db62e

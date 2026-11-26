@@ -243,7 +243,12 @@ func (b *pageBuilder) EstimatedSize() int {
 	// This estimate doesn't account for any values in encoders which haven't
 	// been flushed yet. However, encoder buffers are usually small enough that
 	// we wouldn't massively overshoot our estimate.
-	return b.presenceBuffer.Len() + b.valuesWriter.BytesWritten()
+	size := b.presenceBuffer.Len() + b.valuesWriter.BytesWritten()
+	// TODO dimitarvdimitrov this is ugly
+	if enc, ok := b.valuesEnc.(*fsstEncoder); ok {
+		size += enc.EstimatedSize()
+	}
+	return size
 }
 
 // Rows returns the number of rows appended to the pageBuilder.
@@ -298,9 +303,16 @@ func (b *pageBuilder) Flush() (*MemPage, error) {
 
 	checksum := crc32.Checksum(finalData.Bytes(), checksumTable)
 
+	uncompressedSize := headerSize + presenceSize + b.valuesWriter.BytesWritten()
+	// TODO dimitarvdimitrov this is egly
+	if enc, ok := b.valuesEnc.(*fsstEncoder); ok {
+		// FSST replaces compression, so statistics describe decoded string bytes.
+		uncompressedSize = headerSize + presenceSize + enc.decodedSize
+	}
+
 	page := MemPage{
 		Desc: PageDesc{
-			UncompressedSize: headerSize + presenceSize + b.valuesWriter.BytesWritten(),
+			UncompressedSize: uncompressedSize,
 			CompressedSize:   finalData.Len(),
 			CRC32:            checksum,
 			RowCount:         b.rows,

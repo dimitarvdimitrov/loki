@@ -237,6 +237,12 @@ func (pr *pageReader) init(ctx context.Context) error {
 		pr.valuesDec.Reset(openedPage.ValueData)
 	}
 
+	// FSST uses the descriptor count to locate its fixed-width directory.
+	if dec, ok := pr.valuesDec.(*fsstDecoder); ok {
+		// TODO dimitarvdimitrov this is ugly
+		dec.count = memPage.Desc.ValuesCount
+	}
+
 	pr.ready = true
 	pr.closer = pageCloser
 	pr.lastPhysicalType = pr.physicalType

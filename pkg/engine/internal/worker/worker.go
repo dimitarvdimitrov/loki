@@ -25,6 +25,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/dataobj/deletion"
 	"github.com/grafana/loki/v3/pkg/dataobj/logsobj"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/engine/internal/executor"
 	"github.com/grafana/loki/v3/pkg/engine/internal/metrictimer"
 	"github.com/grafana/loki/v3/pkg/engine/internal/obslock"
@@ -82,6 +83,8 @@ type Config struct {
 
 	// LogsobjCfg is the builder config for compacted log objects.
 	LogsobjCfg logsobj.BuilderBaseConfig
+	// DataObjLogColumnCompression selects the message encoding for each tenant. Nil uses Zstd.
+	DataObjLogColumnCompression func(string) logs.EncodingType
 
 	// BuilderMetrics is shared by logs object builders across worker tasks.
 	BuilderMetrics *logsobj.BuilderMetrics
@@ -197,13 +200,14 @@ func (w *Worker) run(ctx context.Context) error {
 			logMergeObserver = w.config.NewLogMergeObserver(i)
 		}
 		t := &thread{
-			Logger:         log.With(w.logger, "thread", i),
-			Bucket:         w.config.Bucket,
-			DataBucket:     w.config.DataBucket,
-			ScratchStore:   w.config.ScratchStore,
-			IndexobjCfg:    w.config.IndexobjCfg,
-			LogsobjCfg:     w.config.LogsobjCfg,
-			BuilderMetrics: w.config.BuilderMetrics,
+			Logger:                      log.With(w.logger, "thread", i),
+			Bucket:                      w.config.Bucket,
+			DataBucket:                  w.config.DataBucket,
+			ScratchStore:                w.config.ScratchStore,
+			IndexobjCfg:                 w.config.IndexobjCfg,
+			LogsobjCfg:                  w.config.LogsobjCfg,
+			DataObjLogColumnCompression: w.config.DataObjLogColumnCompression,
+			BuilderMetrics:              w.config.BuilderMetrics,
 
 			IndexMergeObserver:   w.config.IndexMergeObserver,
 			LogMergeObserver:     logMergeObserver,

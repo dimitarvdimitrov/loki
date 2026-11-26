@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/compactor/deletionmode"
 	"github.com/grafana/loki/v3/pkg/compression"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/dataobj/sections/streams"
 	"github.com/grafana/loki/v3/pkg/distributor/shardstreams"
 	"github.com/grafana/loki/v3/pkg/loghttp/push"
@@ -35,6 +36,11 @@ import (
 )
 
 const (
+	// DataObjLogColumnCompressionZstd stores PLAIN message values with Zstd.
+	DataObjLogColumnCompressionZstd = "zstd"
+	// DataObjLogColumnCompressionFSST stores FSST message values without outer compression.
+	DataObjLogColumnCompressionFSST = "fsst"
+
 	// LocalRateLimitStrat represents a ingestion rate limiting strategy that enforces the limit
 	// on a per distributor basis.
 	//
@@ -213,7 +219,9 @@ type Limits struct {
 	BloomBuildTaskMaxRetries    int           `yaml:"bloom_build_task_max_retries" json:"bloom_build_task_max_retries"`
 	BloomBuilderResponseTimeout time.Duration `yaml:"bloom_build_builder_response_timeout" json:"bloom_build_builder_response_timeout"`
 
-	BloomCreationEnabled           bool             `yaml:"bloom_creation_enabled" json:"bloom_creation_enabled"`
+	BloomCreationEnabled        bool   `yaml:"bloom_creation_enabled" json:"bloom_creation_enabled"`
+	DataObjLogColumnCompression string `yaml:"dataobj_log_column_compression" json:"dataobj_log_column_compression" category:"experimental"`
+
 	DataObjIndexCompactionEnabled  bool             `yaml:"dataobj_index_compaction_enabled" json:"dataobj_index_compaction_enabled" category:"experimental"`
 	DataObjLogCompactionEnabled    bool             `yaml:"dataobj_log_compaction_enabled" json:"dataobj_log_compaction_enabled" category:"experimental"`
 	DataObjDeletionSweepEnabled    bool             `yaml:"dataobj_deletion_sweep_enabled" json:"dataobj_deletion_sweep_enabled" category:"experimental"`
@@ -563,6 +571,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	)
 
 	f.BoolVar(&l.BloomCreationEnabled, "bloom-build.enable", false, "Deprecated: Whether to create blooms for the tenant.")
+	f.StringVar(&l.DataObjLogColumnCompression, "limits.dataobj-log-column-compression", DataObjLogColumnCompressionZstd, "Experimental: Compression for new message pages for the tenant. Supported values: zstd, fsst.")
 	f.BoolVar(&l.DataObjIndexCompactionEnabled, "dataobj-compaction.index.enable", false, "Experimental. Whether dataobj index compaction runs for the tenant.")
 	f.BoolVar(&l.DataObjLogCompactionEnabled, "dataobj-compaction.log.enable", false, "Experimental. Whether dataobj log compaction runs for the tenant. Log compaction implies index compaction; enabling log compaction without index compaction is a configuration error.")
 	f.BoolVar(&l.DataObjDeletionSweepEnabled, "dataobj-compaction.deletion-sweep.enable", false, "Experimental. Whether the dataobj deletion sweep runs for the tenant. A sweep finds the objects of the tenant that no table of contents (ToC) file can reach. An object that two sweeps, at least 23 hours apart, both find unreachable is a deletion candidate. Sweeps delete the candidates, or only log them if -dataobj.compaction.deletion-sweep.dry-run is true. The sweep also needs -dataobj.compaction.deletion-sweep.enabled.")
@@ -780,6 +789,12 @@ func (l *Limits) Validate() error {
 
 	if f := l.TSDBShardedIndexShardFactor; f < 0 || f&(f-1) != 0 {
 		return fmt.Errorf("tsdb_sharded_index_shard_factor must be 0, 1 or a power of two, got %d", f)
+	}
+
+	switch l.DataObjLogColumnCompression {
+	case "", DataObjLogColumnCompressionZstd, DataObjLogColumnCompressionFSST:
+	default:
+		return fmt.Errorf("dataobj_log_column_compression must be zstd or fsst, got %q", l.DataObjLogColumnCompression)
 	}
 
 	if l.DataObjLogCompactionEnabled && !l.DataObjIndexCompactionEnabled {
@@ -1534,4 +1549,12 @@ func (o *Overrides) SortSchemaLabels(userID string) []string {
 		result[i] = string(fqn)
 	}
 	return result
+}
+
+// DataObjLogColumnCompression returns the encoding for new message pages for userID.
+func (o *Overrides) DataObjLogColumnCompression(userID string) logs.EncodingType {
+	if o.getOverridesForUser(userID).DataObjLogColumnCompression == DataObjLogColumnCompressionFSST {
+		return logs.EncodingTypeFSST
+	}
+	return logs.EncodingTypePlain
 }

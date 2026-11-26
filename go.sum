@@ -236,6 +236,8 @@ github.com/dgryski/go-metro v0.0.0-20261008173524-5059e0b1da03 h1:/DH8T7hZyRwnHe
 github.com/dgryski/go-metro v0.0.0-20261008173524-5059e0b1da03/go.mod h1:j+MopvvtIWPZFgEQY11qG5kPi55yP2suJFyqonAE3IU=
 github.com/digitalocean/godo v1.229.0 h1:oJpT+LrlgGiHdGNTleQBHnYNAHsaVaEnjhomD2PWpAk=
 github.com/digitalocean/godo v1.229.0/go.mod h1:xQsWpVCCbkDrWisHA72hPzPlnC+4W5w/McZY5ij9uvU=
+github.com/dimitarvdimitrov/fsst v0.0.2-0.20261105123440-ee30e95db62e h1:6fOmiKxEuL3hz10AhG7Orc0Kzeb80IM//8HQOQF3GpY=
+github.com/dimitarvdimitrov/fsst v0.0.2-0.20261105123440-ee30e95db62e/go.mod h1:tEvRV7neiydveIx4KFKJXc+ovTSLISk4q8GzQmQVMAI=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=
 github.com/distribution/reference v0.6.0/go.mod h1:BbU0aIcezP1/5jX/8MP0YiH4SdvB5Y4f/wlDRiLyi3E=
 github.com/dlclark/regexp2/v2 v2.12.0 h1:GsCgDZZeHluUDHASr2yqQonZk4Tma5LFmLH9CSsFFEE=

@@ -112,6 +112,8 @@ func (t *table) CompressedSize() int {
 // A tableBuffer holds a set of column builders used for constructing tables.
 // The zero value is ready for use.
 type tableBuffer struct {
+	dataObjLogColumnCompression EncodingType
+
 	streamID  *dataset.ColumnBuilder
 	timestamp *dataset.ColumnBuilder
 
@@ -235,6 +237,11 @@ func (b *tableBuffer) Message(pageSize, pageRowCount int, compressionOpts *datas
 		return b.message
 	}
 
+	encoding, compression := datasetmd.ENCODING_TYPE_PLAIN, datasetmd.COMPRESSION_TYPE_ZSTD
+	if b.dataObjLogColumnCompression == EncodingTypeFSST {
+		encoding, compression = datasetmd.ENCODING_TYPE_FSST, datasetmd.COMPRESSION_TYPE_NONE
+	}
+
 	col, err := dataset.NewColumnBuilder("", dataset.BuilderOptions{
 		PageSizeHint:    pageSize,
 		PageMaxRowCount: pageRowCount,
@@ -242,8 +249,8 @@ func (b *tableBuffer) Message(pageSize, pageRowCount int, compressionOpts *datas
 			Physical: datasetmd.PHYSICAL_TYPE_BINARY,
 			Logical:  ColumnTypeMessage.String(),
 		},
-		Encoding:           datasetmd.ENCODING_TYPE_PLAIN,
-		Compression:        datasetmd.COMPRESSION_TYPE_ZSTD,
+		Encoding:           encoding,
+		Compression:        compression,
 		CompressionOptions: compressionOpts,
 
 		// We explicitly don't have range stats for the message column:

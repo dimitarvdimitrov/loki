@@ -16,6 +16,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/dataobj/deletion"
 	"github.com/grafana/loki/v3/pkg/dataobj/logsobj"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/engine/internal/executor"
 	"github.com/grafana/loki/v3/pkg/engine/internal/scheduler/wire"
 	"github.com/grafana/loki/v3/pkg/engine/internal/worker"
@@ -59,6 +60,8 @@ type WorkerParams struct {
 
 	// LogsobjCfg is the builder config for compacted log objects.
 	LogsobjCfg logsobj.BuilderBaseConfig
+	// DataObjLogColumnCompression selects the message encoding for each tenant. Nil uses Zstd.
+	DataObjLogColumnCompression func(string) logs.EncodingType
 
 	// IndexMergeObserver is used  by compaction to populate output-size
 	// histograms. Optional; nil disables observation.
@@ -128,10 +131,11 @@ func NewWorker(params WorkerParams, reg prometheus.Registerer) (*Worker, error) 
 
 		NumThreads: params.Config.WorkerThreads,
 
-		ScratchStore:   params.ScratchStore,
-		IndexobjCfg:    params.IndexobjCfg,
-		LogsobjCfg:     params.LogsobjCfg,
-		BuilderMetrics: builderMetrics,
+		ScratchStore:                params.ScratchStore,
+		IndexobjCfg:                 params.IndexobjCfg,
+		LogsobjCfg:                  params.LogsobjCfg,
+		DataObjLogColumnCompression: params.DataObjLogColumnCompression,
+		BuilderMetrics:              builderMetrics,
 
 		IndexMergeObserver:   params.IndexMergeObserver,
 		NewLogMergeObserver:  params.NewLogMergeObserver,

@@ -18,6 +18,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/compactor/deletionmode"
 	"github.com/grafana/loki/v3/pkg/compression"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/dataobj/sections/streams"
 	"github.com/grafana/loki/v3/pkg/distributor/shardstreams"
 	"github.com/grafana/loki/v3/pkg/loghttp/push"
@@ -1675,4 +1676,50 @@ func TestOverrides_ShardLayout(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, streams.DefaultShardLayout(), ov.DataObjShardLayout("custom"))
 	})
+}
+
+func TestOverrides_DataObjLogColumnCompression(t *testing.T) {
+	for _, tc := range []struct {
+		global     string
+		custom     string
+		wantGlobal logs.EncodingType
+		wantCustom logs.EncodingType
+	}{
+		{DataObjLogColumnCompressionZstd, DataObjLogColumnCompressionFSST, logs.EncodingTypePlain, logs.EncodingTypeFSST},
+		{DataObjLogColumnCompressionFSST, DataObjLogColumnCompressionZstd, logs.EncodingTypeFSST, logs.EncodingTypePlain},
+	} {
+		t.Run(tc.global, func(t *testing.T) {
+			var defaults Limits
+			flags := flag.NewFlagSet("test", flag.ContinueOnError)
+			defaults.RegisterFlags(flags)
+			require.Equal(t, DataObjLogColumnCompressionZstd, defaults.DataObjLogColumnCompression)
+			require.NoError(t, flags.Parse([]string{"-limits.dataobj-log-column-compression=" + tc.global}))
+			var tenant Limits
+			require.NoError(t, yaml.Unmarshal([]byte("dataobj_log_column_compression: "+tc.custom), &tenant))
+			overrides, err := NewOverrides(defaults, newMockTenantLimits(map[string]*Limits{"custom": &tenant}))
+			require.NoError(t, err)
+			require.Equal(t, tc.wantGlobal, overrides.DataObjLogColumnCompression("default"))
+			require.Equal(t, tc.wantCustom, overrides.DataObjLogColumnCompression("custom"))
+		})
+	}
+	t.Run("zero value defaults to zstd", func(t *testing.T) {
+		overrides, err := NewOverrides(Limits{}, nil)
+		require.NoError(t, err)
+		require.Equal(t, logs.EncodingTypePlain, overrides.DataObjLogColumnCompression("default"))
+	})
+}
+
+func TestLimits_DataObjLogColumnCompression(t *testing.T) {
+	for _, codec := range []string{DataObjLogColumnCompressionZstd, DataObjLogColumnCompressionFSST, "snappy", "FSST", "none"} {
+		t.Run(codec, func(t *testing.T) {
+			var limits Limits
+			limits.RegisterFlags(flag.NewFlagSet("test", flag.PanicOnError))
+			limits.DataObjLogColumnCompression = codec
+			if codec == DataObjLogColumnCompressionZstd || codec == DataObjLogColumnCompressionFSST {
+				require.NoError(t, limits.Validate())
+			} else {
+				require.ErrorContains(t, limits.Validate(), "dataobj_log_column_compression must be zstd or fsst")
+			}
+		})
+	}
 }

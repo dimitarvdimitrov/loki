@@ -70,6 +70,26 @@ The following changes affect rolling back to Loki 3.x:
 
 ## Main / Unreleased
 
+### FSST encoding for data objects
+
+FSST encoding for message pages is experimental and disabled by default.
+The `dataobj_log_column_compression` tenant limit controls new writes and compaction output.
+The supported values are `zstd` and `fsst`. The default is `zstd`.
+Existing objects retain their encoding until a rewrite occurs.
+
+Before you enable FSST for a tenant, upgrade all `querier` and `dataobj-compaction-worker` instances to a version with FSST support.
+Set `dataobj_log_column_compression: fsst` in the runtime overrides for that tenant:
+
+```yaml
+overrides:
+  example-tenant:
+    dataobj_log_column_compression: fsst
+```
+
+To stop new FSST writes, set the tenant limit to `zstd`.
+Keep `querier` and `dataobj-compaction-worker` instances on versions with FSST support until all FSST objects expire or a rewrite replaces them.
+
+
 ### A `logfmt` expression no longer replaces a value from an earlier parser with an empty one
 
 A `logfmt` parser with label extraction expressions, for example `| logfmt foo, bar`, sets an empty label for a name that the log line does not contain. Loki used to set the empty label even when an earlier stage extracting or setting labels, for example `| json`, had already extracted a value with that name, so the empty value replaced the extracted value. Loki now keeps the value of the earlier stage.
