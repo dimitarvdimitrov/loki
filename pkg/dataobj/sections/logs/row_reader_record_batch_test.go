@@ -55,8 +55,10 @@ func TestRowReader_ReadRecordBatch(t *testing.T) {
 	t.Run("returns the same records as Read", func(t *testing.T) {
 		records := randomRecords(rand.New(rand.NewSource(1)), 3000)
 		sections := map[string]*Section{
-			"sorted by stream":    buildSectionFromRecords(t, SortStreamASC, records),
-			"sorted by timestamp": buildSectionFromRecords(t, SortTimestampDESC, records),
+			"zstd/sorted by stream":    buildSectionFromRecords(t, SortStreamASC, records),
+			"zstd/sorted by timestamp": buildSectionFromRecords(t, SortTimestampDESC, records),
+			"fsst/sorted by stream":    buildSectionFromRecordsWithEncoding(t, SortStreamASC, records, EncodingTypeFSST),
+			"fsst/sorted by timestamp": buildSectionFromRecordsWithEncoding(t, SortTimestampDESC, records, EncodingTypeFSST),
 		}
 
 		projections := []struct {

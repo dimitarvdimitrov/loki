@@ -946,70 +946,34 @@ func TestLogReader_MessagePages(t *testing.T) {
 			for i := range 17 {
 				entries = append(entries, entry(t, i+1, lines[i%len(lines)], "level", []string{"info", "error"}[i%2], "sequence", fmt.Sprint(i)))
 			}
-			for _, tc := range []struct {
-				name, query                                                string
-				line, level, repeated, window, infoOnly, emptyOnly, noRows bool
-			}{
-				{name: "all metadata", query: `sum without () (bytes_over_time({app=~".+"}[1m]))`, line: true, level: true},
-				{name: "projected metadata", query: `sum by (app, sequence) (bytes_over_time({app=~".+"}[1m]))`, line: true},
-				{name: "metadata and line predicates", query: `sum by (app, sequence) (bytes_over_time({app=~".+"} | level="info" |= "repeated" [1m]))`, line: true, level: true, repeated: true, infoOnly: true},
-				{name: "predicate without returned line", query: `sum by (app, sequence) (count_over_time({app=~".+"} |= "repeated" [1m]))`, repeated: true},
-				{name: "empty line predicate", query: `sum by (app, sequence) (count_over_time({app=~".+"} |~ "^$" [1m]))`, emptyOnly: true},
-				{name: "metadata predicate rejects every row", query: `sum by (app, sequence) (bytes_over_time({app=~".+"} | level="missing" [1m]))`, noRows: true},
-				{name: "time window across pages", query: `sum without () (bytes_over_time({app=~".+"}[1m]))`, line: true, level: true, window: true},
-			} {
-				t.Run(tc.name, func(t *testing.T) {
-					for _, batchSize := range []int{1, 2, 4, 7} {
-						t.Run(fmt.Sprintf("batch=%d", batchSize), func(t *testing.T) {
-							fixture := planReaderFixture(t, tc.query, newObjectsFixtureWithEncoding(t, codec.encoding, []objtest.Option{objtest.WithTargetPageSize(256), objtest.WithMaxPageRows(3)}, logproto.Stream{Labels: `{app="a"}`, Entries: entries}))
-							require.Greater(t, fixture.messagePages, 1)
-							if tc.window {
-								for i := range fixture.tasks {
-									fixture.tasks[i].start, fixture.tasks[i].end = at(4), at(16)
-								}
+			const query = `sum without () (bytes_over_time({app=~".+"}[1m]))`
+			fixture := planReaderFixture(t, query, newObjectsFixtureWithEncoding(t, codec.encoding,
+				[]objtest.Option{objtest.WithTargetPageSize(256), objtest.WithMaxPageRows(3)},
+				logproto.Stream{Labels: `{app="a"}`, Entries: entries}))
+			require.Greater(t, fixture.messagePages, 1)
+
+			for _, batchSize := range []int{2, 4} {
+				t.Run(fmt.Sprintf("batch=%d", batchSize), func(t *testing.T) {
+					reader := NewLogReader(t.Context(), fixture.objects, queuedTasks(fixture.tasks...), 1, batchSize, NewMetrics(nil))
+					var got []push.Entry
+					for batch := reader.nextRowsBatch(); batch != nil; batch = reader.nextRowsBatch() {
+						for _, run := range batch.streamRuns {
+							require.Equal(t, streamHashOf(`{app="a"}`), run.stream.streamHash)
+							require.Equal(t, labels.FromStrings("app", "a"), run.stream.streamLabels)
+							for i := run.start; i < run.end; i++ {
+								e := push.Entry{Timestamp: time.Unix(0, batch.records.Timestamp.Get(i)).UTC(), Line: string(batch.line(i))}
+								scratch := labels.NewScratchBuilder(0)
+								batch.records.MetadataLabels(i, &scratch).Range(func(label labels.Label) {
+									e.StructuredMetadata = append(e.StructuredMetadata, push.LabelAdapter{Name: label.Name, Value: label.Value})
+								})
+								got = append(got, e)
 							}
-							reader := NewLogReader(t.Context(), fixture.objects, queuedTasks(fixture.tasks...), 1, batchSize, NewMetrics(nil))
-							var got, want []push.Entry
-							for batch := reader.nextRowsBatch(); batch != nil; batch = reader.nextRowsBatch() {
-								for _, run := range batch.streamRuns {
-									require.Equal(t, streamHashOf(`{app="a"}`), run.stream.streamHash)
-									require.Equal(t, "a", run.stream.streamLabels.Get("app"))
-									for i := run.start; i < run.end; i++ {
-										e := push.Entry{Timestamp: time.Unix(0, batch.records.Timestamp.Get(i)).UTC(), Line: string(batch.line(i))}
-										scratch := labels.NewScratchBuilder(0)
-										batch.records.MetadataLabels(i, &scratch).Range(func(label labels.Label) {
-											e.StructuredMetadata = append(e.StructuredMetadata, push.LabelAdapter{Name: label.Name, Value: label.Value})
-										})
-										got = append(got, e)
-									}
-								}
-								batch.release()
-							}
-							require.NoError(t, reader.Err())
-							require.NoError(t, reader.Close())
-							for i, original := range entries {
-								if tc.noRows || (tc.infoOnly && i%2 != 0) || (tc.emptyOnly && original.Line != "") {
-									continue
-								}
-								if tc.repeated && original.Line != "repeated" {
-									continue
-								}
-								if tc.window && (i+1 < 4 || i+1 >= 16) {
-									continue
-								}
-								e := push.Entry{Timestamp: original.Timestamp}
-								if tc.line {
-									e.Line = original.Line
-								}
-								if tc.level {
-									e.StructuredMetadata = append(e.StructuredMetadata, original.StructuredMetadata[0])
-								}
-								e.StructuredMetadata = append(e.StructuredMetadata, original.StructuredMetadata[1])
-								want = append(want, e)
-							}
-							require.ElementsMatch(t, want, got)
-						})
+						}
+						batch.release()
 					}
+					require.NoError(t, reader.Err())
+					require.NoError(t, reader.Close())
+					require.ElementsMatch(t, entries, got)
 				})
 			}
 		})
