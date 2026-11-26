@@ -18,6 +18,7 @@ import (
 // dataObjCluster is a cluster that writes through Kafka to the chunk store, by an ingester, and to
 // data objects, by a dataobj-builder. It reads through a query-frontend and a querier.
 type dataObjCluster struct {
+	builder        *cluster.Component
 	distributor    *cluster.Component
 	ingester       *cluster.Component
 	indexGateway   *cluster.Component
@@ -121,7 +122,7 @@ func startDataObjCluster(t *testing.T, options ...dataObjClusterOption) *dataObj
 				"-tsdb.shipper.index-gateway-client.server-address=" + tIndexGateway.GRPCURL(),
 			}, kafkaIngestionFlags...)...)...,
 		)
-		_ = clu.AddComponent(
+		tDataobjBuilder = clu.AddComponent(
 			"dataobj-builder",
 			flags(
 				"-target=dataobj-builder",
@@ -178,6 +179,7 @@ func startDataObjCluster(t *testing.T, options ...dataObjClusterOption) *dataObj
 	require.NoError(t, clu.Run())
 
 	return &dataObjCluster{
+		builder:        tDataobjBuilder,
 		distributor:    tDistributor,
 		ingester:       tIngester,
 		indexGateway:   tIndexGateway,

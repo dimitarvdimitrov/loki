@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/dataobj/internal/format"
 	"github.com/grafana/loki/v3/pkg/dataobj/logsobj"
 	"github.com/grafana/loki/v3/pkg/dataobj/metastore"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/dataobj/sections/streams"
 	"github.com/grafana/loki/v3/pkg/dataobj/uploader"
 	"github.com/grafana/loki/v3/pkg/logproto"
@@ -57,6 +58,7 @@ type builderOptions struct {
 	targetObjectSize  flagext.Bytes
 	bufferSize        flagext.Bytes
 	maxPageRows       int
+	messageEncoding   logs.EncodingType
 	overrides         logsobj.TenantOverrides
 	compactedLayout   bool
 }
@@ -110,6 +112,21 @@ func WithMaxPageRows(rows int) Option {
 // to the objects that start after it. The object in progress keeps its layout.
 func WithTenantOverrides(overrides logsobj.TenantOverrides) Option {
 	return func(o *builderOptions) { o.overrides = overrides }
+}
+
+// WithMessageEncoding selects the message encoding and preserves the other tenant overrides.
+// The default is PLAIN with Zstd compression.
+func WithMessageEncoding(encoding logs.EncodingType) Option {
+	return func(o *builderOptions) { o.messageEncoding = encoding }
+}
+
+type messageEncodingOverride struct {
+	logsobj.TenantOverrides
+	encoding logs.EncodingType
+}
+
+func (o messageEncodingOverride) DataObjLogColumnCompression(string) logs.EncodingType {
+	return o.encoding
 }
 
 // Builder is a bucket holding logs data objects and index data objects. Append logs with
@@ -169,6 +186,9 @@ func NewBuilder(t testing.TB, opts ...Option) *Builder {
 		builderConfig.MaxPageRows = options.maxPageRows
 	}
 
+	if options.messageEncoding != 0 {
+		options.overrides = messageEncodingOverride{TenantOverrides: options.overrides, encoding: options.messageEncoding}
+	}
 	logsBuilder, err := logsobj.NewBuilder(Tenant, builderConfig, nil, logsobj.NewBuilderMetrics(), log.NewNopLogger(), options.overrides)
 	require.NoError(t, err, "expected to be able to create logs builder")
 

@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"testing"
@@ -13,8 +14,14 @@ import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/loki/v3/integration/client"
+	"github.com/grafana/loki/v3/pkg/dataobj"
+	"github.com/grafana/loki/v3/pkg/dataobj/objtest"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
+	"github.com/grafana/loki/v3/pkg/validation"
 )
 
 // TestSampleQueryStreamDataObjEquivalence ingests the same data through the real distributor and
@@ -22,6 +29,19 @@ import (
 // once from data objects, built from the same Kafka records by a dataobj-builder, routed there by
 // the querier's stream-first data-object band. The two must return identical results.
 func TestSampleQueryStreamDataObjEquivalence(t *testing.T) {
+	for _, codec := range []struct {
+		name, override string
+		encoding       logs.EncodingType
+	}{
+		{name: "default", encoding: logs.EncodingTypePlain},
+		{name: "zstd", override: validation.DataObjLogColumnCompressionZstd, encoding: logs.EncodingTypePlain},
+		{name: "fsst", override: validation.DataObjLogColumnCompressionFSST, encoding: logs.EncodingTypeFSST},
+	} {
+		t.Run(codec.name, func(t *testing.T) { testSampleQueryStreamDataObjEquivalence(t, codec.override, codec.encoding) })
+	}
+}
+
+func testSampleQueryStreamDataObjEquivalence(t *testing.T, codec string, encoding logs.EncodingType) {
 	var (
 		clu            = startDataObjCluster(t, withChunksOnlyQuerier())
 		tDistributor   = clu.distributor
@@ -42,6 +62,16 @@ func TestSampleQueryStreamDataObjEquivalence(t *testing.T) {
 		tsB1 = now.Add(-3 * time.Minute)
 		tsB2 = now.Add(-2 * time.Minute)
 	)
+
+	if codec != "" {
+		// Preserve the frontend routing limits in the shared runtime override.
+		limits := tQueryFrontend.GetTenantLimits(tenant)
+		limits.DataObjLogColumnCompression = codec
+		require.NoError(t, clu.builder.SetTenantLimits(tenant, limits))
+		require.Eventually(t, func() bool {
+			return clu.builder.GetTenantLimits(tenant).DataObjLogColumnCompression == codec
+		}, 10*time.Second, 100*time.Millisecond)
+	}
 
 	cliDistributor := client.New(tenant, "", tDistributor.HTTPURL())
 	cliFrontend := client.New(tenant, "", tQueryFrontend.HTTPURL())
@@ -214,6 +244,29 @@ func TestSampleQueryStreamDataObjEquivalence(t *testing.T) {
 		require.Zero(t, store.Chunk.DecompressedLines)
 	})
 
+	t.Run("the ingested objects contain the selected message encoding", func(t *testing.T) {
+		// SchemaWithTSDB uses store-1. The builder uses the default dataobj/ prefix.
+		bucket, err := filesystem.NewBucket(filepath.Join(clu.builder.ClusterSharedPath(), "fs-store-1", "dataobj"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, bucket.Close()) })
+		pages := 0
+		require.NoError(t, bucket.Iter(t.Context(), "objects/", func(name string) error {
+			obj, err := dataobj.FromBucket(t.Context(), bucket, name, 0)
+			if err != nil {
+				return err
+			}
+			for _, section := range obj.Sections().Filter(logs.CheckSection) {
+				if section.Tenant == tenant {
+					pages += objtest.RequireMessageEncoding(t, obj, encoding, tenant)
+					break
+				}
+			}
+			return nil
+		}, objstore.WithRecursiveIter()))
+		require.Positive(t, pages)
+		t.Logf("verified %d %s message pages for tenant %s", pages, encoding, tenant)
+	})
+
 	t.Run("a further query served by data objects hits the metadata cache for log objects and index objects because it opens the same objects again", func(t *testing.T) {
 		_, err := runCountQuery()
 		require.NoError(t, err)
@@ -279,6 +332,7 @@ func TestSampleQueryStreamDataObjEquivalence(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, map[string]float64{labels.FromMap(streamLabels("a")).String(): 3}, counts)
 
+		require.Zero(t, resp.Data.Statistics.Querier.Store.Chunk.DecompressedLines)
 		dataobjStats := resp.Data.Statistics.Querier.Store.Dataobj
 		require.Positive(t, dataobjStats.PrePredicateDecompressedRows)
 		require.Positive(t, dataobjStats.PrePredicateDecompressedBytes)

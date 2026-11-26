@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/dataobj/metastore"
 	"github.com/grafana/loki/v3/pkg/dataobj/objtest"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
 	"github.com/grafana/loki/v3/pkg/storage/chunk"
@@ -31,8 +32,9 @@ type sampleRow struct {
 // objectsFixture is a bucket of data objects together with the descriptors the metastore
 // resolves for a query over all of them.
 type objectsFixture struct {
-	bucket      objstore.Bucket
-	descriptors []*metastore.DataobjSectionDescriptor
+	messagePages int
+	bucket       objstore.Bucket
+	descriptors  []*metastore.DataobjSectionDescriptor
 }
 
 // newObjectsFixture writes streams for objtest.Tenant and resolves every section they produced.
@@ -48,11 +50,20 @@ func newObjectsFixture(t testing.TB, tenantStreams ...logproto.Stream) objectsFi
 func newObjectsFixtureWithOptions(t testing.TB, opts []objtest.Option, tenantStreams ...logproto.Stream) objectsFixture {
 	t.Helper()
 
+	return newObjectsFixtureWithEncoding(t, logs.EncodingTypePlain, opts, tenantStreams...)
+}
+
+func newObjectsFixtureWithEncoding(t testing.TB, encoding logs.EncodingType, opts []objtest.Option, tenantStreams ...logproto.Stream) objectsFixture {
+	t.Helper()
+	if encoding != logs.EncodingTypePlain {
+		opts = append(append([]objtest.Option(nil), opts...), objtest.WithMessageEncoding(encoding))
+	}
 	builder := objtest.NewBuilder(t, opts...)
 	ctx := user.InjectOrgID(t.Context(), objtest.Tenant)
 
 	builder.Append(ctx, tenantStreams...)
 	builder.Close()
+	pages := builder.RequireMessageEncoding(encoding)
 
 	resp, err := builder.Metastore().Sections(ctx, metastore.SectionsRequest{
 		Start:    at(0),
@@ -62,7 +73,7 @@ func newObjectsFixtureWithOptions(t testing.TB, opts []objtest.Option, tenantStr
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.Sections, "the metastore resolved no section for the fixture")
 
-	return objectsFixture{bucket: builder.Location().Bucket, descriptors: resp.Sections}
+	return objectsFixture{bucket: builder.Location().Bucket, descriptors: resp.Sections, messagePages: pages}
 }
 
 // denyEverythingFilterer rejects every stream, so a test can assert that access control is

@@ -268,3 +268,29 @@ func countIndexObjects(t *testing.T, builder *Builder) int {
 func (*shardOverrides) DataObjLogColumnCompression(string) logs.EncodingType {
 	return logs.EncodingTypePlain
 }
+
+func TestWithMessageEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		encoding logs.EncodingType
+		opts     []Option
+	}{
+		{name: "default", encoding: logs.EncodingTypePlain},
+		{name: "zstd", encoding: logs.EncodingTypePlain, opts: []Option{WithMessageEncoding(logs.EncodingTypePlain)}},
+		{name: "fsst", encoding: logs.EncodingTypeFSST, opts: []Option{WithMessageEncoding(logs.EncodingTypeFSST)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			builder := NewBuilder(t, append(tc.opts, WithMaxPageRows(3), WithTargetPageSize(256))...)
+			for round := range 2 {
+				var entries []push.Entry
+				for i := range 17 {
+					entries = append(entries, push.Entry{Timestamp: time.Unix(int64(round*17+i+1), 0), Line: fmt.Sprintf("message %d", i)})
+				}
+				builder.Append(t.Context(), logproto.Stream{Labels: `{app="test"}`, Entries: entries})
+				builder.Flush(t.Context())
+			}
+			builder.Close()
+			require.GreaterOrEqual(t, builder.RequireMessageEncoding(tc.encoding), 12)
+		})
+	}
+}
