@@ -31,6 +31,27 @@ import (
 )
 
 func TestLogReader(t *testing.T) {
+	for _, codec := range messageCodecs {
+		t.Run(codec.name, func(t *testing.T) {
+			for _, layout := range []struct {
+				name string
+				opts []objtest.Option
+			}{
+				{name: "default-pages"}, {name: "small-pages", opts: []objtest.Option{objtest.WithTargetPageSize(256), objtest.WithMaxPageRows(3)}},
+			} {
+				t.Run(layout.name, func(t *testing.T) { testLogReader(t, codec.encoding, layout.opts) })
+			}
+		})
+	}
+}
+
+func testLogReader(t *testing.T, encoding logs.EncodingType, opts []objtest.Option) {
+	newReaderFixture := func(t testing.TB, query string, streams ...logproto.Stream) readerFixture {
+		return planReaderFixture(t, query, newObjectsFixtureWithEncoding(t, encoding, opts, streams...))
+	}
+	newObjectsFixtureWithOptions := func(t testing.TB, options []objtest.Option, streams ...logproto.Stream) objectsFixture {
+		return newObjectsFixtureWithEncoding(t, encoding, append(append([]objtest.Option(nil), opts...), options...), streams...)
+	}
 	metrics := NewMetrics(nil)
 
 	// bytes_over_time projects the message column, so a scan returns lines.
@@ -726,8 +747,9 @@ func BenchmarkLogReader(b *testing.B) {
 // readerFixture is an open-object registry together with the real tasks a plan produced over it,
 // so a reader test drives the same tasks production would.
 type readerFixture struct {
-	objects *OpenObjects
-	tasks   []ReadTask
+	objects      *OpenObjects
+	messagePages int
+	tasks        []ReadTask
 }
 
 // newReaderFixture plans the read of query over streams.
@@ -758,7 +780,7 @@ func planReaderFixture(t testing.TB, query string, fixture objectsFixture) reade
 	require.NoError(t, err)
 	require.NotEmpty(t, tasks)
 
-	return readerFixture{objects: objects, tasks: tasks}
+	return readerFixture{objects: objects, tasks: tasks, messagePages: fixture.messagePages}
 }
 
 // drainReader collects every line the reader yields, in no fixed order. It releases each batch
@@ -907,4 +929,53 @@ func newTrackedReader(capacity int) *trackedReader {
 		return batch
 	}
 	return reader
+}
+
+var messageCodecs = []struct {
+	name     string
+	encoding logs.EncodingType
+}{
+	{"zstd", logs.EncodingTypePlain}, {"fsst", logs.EncodingTypeFSST},
+}
+
+func TestLogReader_MessagePages(t *testing.T) {
+	for _, codec := range messageCodecs {
+		t.Run(codec.name, func(t *testing.T) {
+			lines := []string{"", "hello 世界 🌍", "before\x00after", "repeated", "repeated", strings.Repeat("long message 世界 ", 1024), "last"}
+			var entries []push.Entry
+			for i := range 17 {
+				entries = append(entries, entry(t, i+1, lines[i%len(lines)], "level", []string{"info", "error"}[i%2], "sequence", fmt.Sprint(i)))
+			}
+			const query = `sum without () (bytes_over_time({app=~".+"}[1m]))`
+			fixture := planReaderFixture(t, query, newObjectsFixtureWithEncoding(t, codec.encoding,
+				[]objtest.Option{objtest.WithTargetPageSize(256), objtest.WithMaxPageRows(3)},
+				logproto.Stream{Labels: `{app="a"}`, Entries: entries}))
+			require.Greater(t, fixture.messagePages, 1)
+
+			for _, batchSize := range []int{2, 4} {
+				t.Run(fmt.Sprintf("batch=%d", batchSize), func(t *testing.T) {
+					reader := NewLogReader(t.Context(), fixture.objects, queuedTasks(fixture.tasks...), 1, batchSize, NewMetrics(nil))
+					var got []push.Entry
+					for batch := reader.nextRowsBatch(); batch != nil; batch = reader.nextRowsBatch() {
+						for _, run := range batch.streamRuns {
+							require.Equal(t, streamHashOf(`{app="a"}`), run.stream.streamHash)
+							require.Equal(t, labels.FromStrings("app", "a"), run.stream.streamLabels)
+							for i := run.start; i < run.end; i++ {
+								e := push.Entry{Timestamp: time.Unix(0, batch.records.Timestamp.Get(i)).UTC(), Line: string(batch.line(i))}
+								scratch := labels.NewScratchBuilder(0)
+								batch.records.MetadataLabels(i, &scratch).Range(func(label labels.Label) {
+									e.StructuredMetadata = append(e.StructuredMetadata, push.LabelAdapter{Name: label.Name, Value: label.Value})
+								})
+								got = append(got, e)
+							}
+						}
+						batch.release()
+					}
+					require.NoError(t, reader.Err())
+					require.NoError(t, reader.Close())
+					require.ElementsMatch(t, entries, got)
+				})
+			}
+		})
+	}
 }

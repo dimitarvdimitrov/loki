@@ -15,6 +15,8 @@ import (
 
 	"github.com/grafana/loki/pkg/push"
 
+	"github.com/grafana/loki/v3/pkg/dataobj/objtest"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	logqlmodel "github.com/grafana/loki/v3/pkg/logql/model"
 )
@@ -33,7 +35,26 @@ func TestLogQLScripts(t *testing.T) {
 
 			b, err := os.ReadFile(f)
 			require.NoError(t, err)
-			RunScript(t, filepath.Base(f), string(b))
+			for _, codec := range []struct {
+				name     string
+				encoding logs.EncodingType
+			}{
+				{"zstd", logs.EncodingTypePlain}, {"fsst", logs.EncodingTypeFSST},
+			} {
+				t.Run(codec.name, func(t *testing.T) {
+					for _, layout := range []struct {
+						name string
+						opts []objtest.Option
+					}{
+						{name: "default-pages"},
+						{name: "small-pages", opts: []objtest.Option{objtest.WithTargetPageSize(256), objtest.WithMaxPageRows(3)}},
+					} {
+						t.Run(layout.name, func(t *testing.T) {
+							runScriptWithEncoding(t, filepath.Base(f), string(b), codec.encoding, layout.opts...)
+						})
+					}
+				})
+			}
 		})
 	}
 }

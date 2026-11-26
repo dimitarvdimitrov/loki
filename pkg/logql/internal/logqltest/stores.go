@@ -6,6 +6,8 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/loki/v3/pkg/dataobj/metastore"
+	"github.com/grafana/loki/v3/pkg/dataobj/objtest"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	loglinestore "github.com/grafana/loki/v3/pkg/logline/store"
 	"github.com/grafana/loki/v3/pkg/logproto"
 )
@@ -16,16 +18,18 @@ import (
 type scriptStores struct {
 	t *testing.T
 
-	chunks  *testingChunkStore
-	logline *loglinestore.Store
+	chunks          *testingChunkStore
+	messageEncoding logs.EncodingType
+	builderOptions  []objtest.Option
+	logline         *loglinestore.Store
 
 	// dataObjBucket and dataObjMetastore are nil when there are no streams.
 	dataObjBucket    objstore.Bucket
 	dataObjMetastore metastore.Metastore
 }
 
-func newScriptStores(t *testing.T) *scriptStores {
-	return &scriptStores{t: t}
+func newScriptStores(t *testing.T, encoding logs.EncodingType, opts ...objtest.Option) *scriptStores {
+	return &scriptStores{t: t, messageEncoding: encoding, builderOptions: opts}
 }
 
 // setStreams rebuilds the stores with streams. It stops the previous chunk store. No query runs
@@ -39,6 +43,6 @@ func (s *scriptStores) setStreams(streams []logproto.Stream) {
 	s.logline = newTestingLoglineStoreWithStreams(s.t, streams)
 	s.dataObjBucket, s.dataObjMetastore = nil, nil
 	if len(streams) > 0 {
-		s.dataObjBucket, s.dataObjMetastore = newTestingDataObjectsWithStreams(s.t, streams)
+		s.dataObjBucket, s.dataObjMetastore = newTestingDataObjectsWithStreams(s.t, streams, s.messageEncoding, s.builderOptions...)
 	}
 }

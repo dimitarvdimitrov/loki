@@ -871,9 +871,16 @@ func buildTestSection(t *testing.T) *Section {
 }
 
 func buildSectionFromRecords(t *testing.T, sortOrder SortOrder, records []Record) *Section {
+	t.Helper()
+	return buildSectionFromRecordsWithEncoding(t, sortOrder, records, 0)
+}
+
+func buildSectionFromRecordsWithEncoding(t *testing.T, sortOrder SortOrder, records []Record, encoding EncodingType) *Section {
+	t.Helper()
 	logsBuilder := NewBuilder(nil, BuilderOptions{
-		StripeMergeLimit: 2,
-		SortOrder:        sortOrder,
+		StripeMergeLimit:            2,
+		SortOrder:                   sortOrder,
+		DataObjLogColumnCompression: encoding,
 	})
 	for _, record := range records {
 		logsBuilder.Append(record)

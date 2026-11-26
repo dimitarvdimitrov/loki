@@ -29,6 +29,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/dataobj"
 	"github.com/grafana/loki/v3/pkg/dataobj/fixtures"
+	"github.com/grafana/loki/v3/pkg/dataobj/logsobj"
 	"github.com/grafana/loki/v3/pkg/dataobj/metadata"
 	"github.com/grafana/loki/v3/pkg/dataobj/metastore"
 	"github.com/grafana/loki/v3/pkg/dataobj/objtest"
@@ -1712,7 +1713,10 @@ func newTestDataObjStoreOfObjects(t *testing.T, objects []testObject) *testDataO
 }
 
 // shardLayoutOverrides gives every tenant the shard layout in its layout field and no schema labels.
-type shardLayoutOverrides struct{ layout dataobjstreams.ShardLayout }
+type shardLayoutOverrides struct {
+	logsobj.NoTenantOverrides
+	layout dataobjstreams.ShardLayout
+}
 
 func (o *shardLayoutOverrides) SortSchemaLabels(string) []string { return nil }
 

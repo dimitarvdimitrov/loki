@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/loki/pkg/push"
 
 	"github.com/grafana/loki/v3/pkg/dataobj/objtest"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/logql"
 	logqlmodel "github.com/grafana/loki/v3/pkg/logql/model"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
@@ -37,9 +38,14 @@ const (
 // and the data source. README.md lists them.
 func RunScript(t *testing.T, name, script string) {
 	t.Helper()
+	runScriptWithEncoding(t, name, script, logs.EncodingTypePlain)
+}
+
+func runScriptWithEncoding(t *testing.T, name, script string, encoding logs.EncodingType, opts ...objtest.Option) {
+	t.Helper()
 
 	stacks := newExecutionStacks(t, name)
-	runScriptWith(t, name, script, stacks, func(cmd evalCmd, exp expectations) {
+	runScriptWithStores(t, name, script, stacks, newScriptStores(t, encoding, opts...), func(cmd evalCmd, exp expectations) {
 		runEval(t, name, stacks, cmd, exp)
 	})
 }
@@ -95,12 +101,16 @@ func runScript(t *testing.T, name, script string, stacks []executionStack) map[s
 // them against their expectations.
 func runScriptWith(t *testing.T, name, script string, stacks []executionStack, runEval func(cmd evalCmd, exp expectations)) {
 	t.Helper()
+	runScriptWithStores(t, name, script, stacks, newScriptStores(t, logs.EncodingTypePlain), runEval)
+}
+
+func runScriptWithStores(t *testing.T, name, script string, stacks []executionStack, stores *scriptStores, runEval func(cmd evalCmd, exp expectations)) {
+	t.Helper()
 
 	streams := newStreamsParser()
 	streamsChanged := true
 
-	// Every stack reads the same stores, which are expensive to build.
-	stores := newScriptStores(t)
+	// Every stack reads the same stores.
 
 	// refreshStreams gives every stack the current data before an eval.
 	refreshStreams := func() {
@@ -203,6 +213,10 @@ func runEval(t *testing.T, name string, stacks []executionStack, cmd evalCmd, ex
 					t.Skipf("%s: stack does not support this query", stack.name())
 				}
 				res, err := stack.eval(cmd)
+				if stack.name() == directDataObjStackName || stack.name() == queryFrontendShardDataObjStackName || stack.name() == queryFrontendShardDataObjAndChunkStackName {
+					store := res.Statistics.Querier.Store
+					t.Logf("storage reads: dataobj_rows=%d chunk_lines=%d", store.Dataobj.PrePredicateDecompressedRows, store.Chunk.DecompressedLines)
+				}
 				assertResult(t, name, cmd, exp, res, err, stack.isQueryShardingSupported(), stack.isStreamFirstEnabled(),
 					exp.isValueComparisonSkipped[stack.name()], effectiveEpsilon(exp, stack.name()))
 			})
