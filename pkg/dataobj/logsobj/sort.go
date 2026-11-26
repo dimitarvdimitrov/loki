@@ -163,13 +163,14 @@ func (b *Builder) writeLogsSections(
 				// so the section builder must not drop any. Otherwise the
 				// stream counters would count records that the builder drops.
 				lb = logs.NewBuilder(b.sortLogsMetrics, logs.BuilderOptions{
-					PageSizeHint:     int(b.cfg.TargetPageSize),
-					PageMaxRowCount:  b.cfg.MaxPageRows,
-					BufferSize:       int(b.cfg.BufferSize),
-					StripeMergeLimit: b.cfg.SectionStripeMergeLimit,
-					AppendStrategy:   logs.AppendOrdered,
-					SortOrder:        logs.SortSchemaASC,
-					DropDuplicates:   false,
+					PageSizeHint:                int(b.cfg.TargetPageSize),
+					PageMaxRowCount:             b.cfg.MaxPageRows,
+					BufferSize:                  int(b.cfg.BufferSize),
+					StripeMergeLimit:            b.cfg.SectionStripeMergeLimit,
+					AppendStrategy:              logs.AppendOrdered,
+					SortOrder:                   logs.SortSchemaASC,
+					DropDuplicates:              false,
+					DataObjLogColumnCompression: b.messageEncoding,
 				})
 				lb.SetTenant(tenant)
 			}

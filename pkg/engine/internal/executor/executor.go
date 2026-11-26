@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/dataobj/deletion"
 	"github.com/grafana/loki/v3/pkg/dataobj/logsobj"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/engine/internal/planner/physical"
 	"github.com/grafana/loki/v3/pkg/scratch"
 )
@@ -27,6 +28,8 @@ type Config struct {
 	IndexobjCfg logsobj.BuilderBaseConfig
 	// LogsobjCfg is the builder config for log objects.
 	LogsobjCfg logsobj.BuilderBaseConfig
+	// DataObjLogColumnCompression selects the message encoding for each tenant. Nil uses Zstd.
+	DataObjLogColumnCompression func(string) logs.EncodingType
 	// BuilderMetrics is shared by logs object builders across worker tasks.
 	BuilderMetrics *logsobj.BuilderMetrics
 
@@ -105,17 +108,18 @@ type NewLogMergeObserverFunc func(thread int) LogMergeObserver
 
 func Run(ctx context.Context, cfg Config, plan *physical.Plan, logger log.Logger) Pipeline {
 	c := &Context{
-		plan:               plan,
-		bucket:             cfg.Bucket,
-		dataBucket:         cfg.DataBucket,
-		logger:             logger,
-		getExternalInputs:  cfg.GetExternalInputs,
-		scratchStore:       cfg.ScratchStore,
-		indexobjCfg:        cfg.IndexobjCfg,
-		logsobjCfg:         cfg.LogsobjCfg,
-		builderMetrics:     cfg.BuilderMetrics,
-		indexMergeObserver: cfg.IndexMergeObserver,
-		logMergeObserver:   cfg.LogMergeObserver,
+		plan:                        plan,
+		bucket:                      cfg.Bucket,
+		dataBucket:                  cfg.DataBucket,
+		logger:                      logger,
+		getExternalInputs:           cfg.GetExternalInputs,
+		scratchStore:                cfg.ScratchStore,
+		indexobjCfg:                 cfg.IndexobjCfg,
+		logsobjCfg:                  cfg.LogsobjCfg,
+		dataObjLogColumnCompression: cfg.DataObjLogColumnCompression,
+		builderMetrics:              cfg.BuilderMetrics,
+		indexMergeObserver:          cfg.IndexMergeObserver,
+		logMergeObserver:            cfg.LogMergeObserver,
 
 		deletionSweepMetrics: cfg.DeletionSweepMetrics,
 	}
@@ -142,10 +146,11 @@ type Context struct {
 
 	getExternalInputs func(ctx context.Context, node physical.Node) []Pipeline
 
-	scratchStore   scratch.Store
-	indexobjCfg    logsobj.BuilderBaseConfig
-	logsobjCfg     logsobj.BuilderBaseConfig
-	builderMetrics *logsobj.BuilderMetrics
+	scratchStore                scratch.Store
+	indexobjCfg                 logsobj.BuilderBaseConfig
+	logsobjCfg                  logsobj.BuilderBaseConfig
+	dataObjLogColumnCompression func(string) logs.EncodingType
+	builderMetrics              *logsobj.BuilderMetrics
 
 	indexMergeObserver IndexMergeObserver
 	logMergeObserver   LogMergeObserver

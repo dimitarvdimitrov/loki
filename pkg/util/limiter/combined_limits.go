@@ -7,6 +7,7 @@ import (
 	bloomplanner "github.com/grafana/loki/v3/pkg/bloombuild/planner"
 	"github.com/grafana/loki/v3/pkg/bloomgateway"
 	"github.com/grafana/loki/v3/pkg/compactor"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
 	"github.com/grafana/loki/v3/pkg/dataobj/sections/streams"
 	"github.com/grafana/loki/v3/pkg/distributor"
 	"github.com/grafana/loki/v3/pkg/indexgateway"
@@ -38,6 +39,7 @@ type CombinedLimits interface {
 	bucket.SSEConfigProvider
 	logline_query_limits.Limits
 	SortSchemaLabels(userID string) []string
+	DataObjLogColumnCompression(userID string) logs.EncodingType
 	DataObjShardLayout(userID string) streams.ShardLayout
 	CompactionPhases(userID string) (runIndex, runLog bool)
 	DeletionSweepEnabled(userID string) bool

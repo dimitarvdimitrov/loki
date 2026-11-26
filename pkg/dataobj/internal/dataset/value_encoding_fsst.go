@@ -203,6 +203,21 @@ func (dec *fsstDecoder) Decode(alloc *memory.Allocator, count int) (columnar.Arr
 	return array, nil
 }
 
+// Skip advances through the validated string directory without decoding message bytes.
+func (dec *fsstDecoder) Skip(count int) (int, error) {
+	if count <= 0 {
+		return 0, nil
+	}
+	if dec.table == nil {
+		if err := dec.init(); err != nil {
+			return 0, err
+		}
+	}
+	n := min(count, dec.count-dec.row)
+	dec.row += n
+	return n, nil
+}
+
 func (dec *fsstDecoder) Reset(data []byte) {
 	dec.data = data
 	dec.count, dec.row = 0, 0

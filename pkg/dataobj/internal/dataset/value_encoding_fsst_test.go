@@ -128,3 +128,42 @@ func TestFSSTRejectsCorruptDirectory(t *testing.T) {
 		alloc.Free()
 	}
 }
+
+func TestFSSTSkip(t *testing.T) {
+	var buf bytes.Buffer
+	enc := &fsstEncoder{w: &buf}
+	for _, input := range []string{"first", "", "世界", "last"} {
+		require.NoError(t, enc.Encode(BinaryValue([]byte(input))))
+	}
+	require.NoError(t, enc.Flush())
+	dec := &fsstDecoder{data: buf.Bytes(), count: 4}
+	for _, count := range []int{-1, 0} {
+		n, err := dec.Skip(count)
+		require.NoError(t, err)
+		require.Zero(t, n)
+	}
+	n, err := dec.Skip(2)
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+	var alloc memory.Allocator
+	defer alloc.Free()
+	arr, err := dec.Decode(&alloc, 1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"世界"}, convertToStrings(t, arr))
+	n, err = dec.Skip(100)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	n, err = dec.Skip(1)
+	require.NoError(t, err)
+	require.Zero(t, n)
+	_, err = dec.Decode(&alloc, 1)
+	require.ErrorIs(t, err, io.EOF)
+	dec.Reset(buf.Bytes())
+	dec.count = 4
+	arr, err = dec.Decode(&alloc, 1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"first"}, convertToStrings(t, arr))
+	bad := &fsstDecoder{data: []byte{1}, count: 4}
+	_, err = bad.Skip(1)
+	require.Error(t, err)
+}

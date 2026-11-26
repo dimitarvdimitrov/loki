@@ -2190,3 +2190,19 @@ func (m tenantLayouts) DataObjShardLayout(tenant string) streams.ShardLayout {
 	}
 	return layout.ShardLayout()
 }
+
+func (tenantOverrides) DataObjLogColumnCompression(string) logs.EncodingType {
+	return logs.EncodingTypePlain
+}
+
+func (oneShardOverrides) DataObjLogColumnCompression(string) logs.EncodingType {
+	return logs.EncodingTypePlain
+}
+
+func (*mutableOverrides) DataObjLogColumnCompression(string) logs.EncodingType {
+	return logs.EncodingTypePlain
+}
+
+func (tenantLayouts) DataObjLogColumnCompression(string) logs.EncodingType {
+	return logs.EncodingTypePlain
+}

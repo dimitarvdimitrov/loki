@@ -115,6 +115,9 @@ const (
 
 // BuilderOptions configures the behavior of the logs section.
 type BuilderOptions struct {
+	// DataObjLogColumnCompression selects PLAIN with ZSTD or FSST for message pages. The zero value defaults to PLAIN with ZSTD.
+	DataObjLogColumnCompression EncodingType
+
 	// PageSizeHint is the size of pages to use when encoding the logs section.
 	PageSizeHint int
 
@@ -196,8 +199,10 @@ func NewBuilder(metrics *Metrics, opts BuilderOptions) *Builder {
 	}
 
 	return &Builder{
-		metrics: metrics,
-		opts:    opts,
+		metrics:       metrics,
+		opts:          opts,
+		stripeBuffer:  tableBuffer{dataObjLogColumnCompression: opts.DataObjLogColumnCompression},
+		sectionBuffer: tableBuffer{dataObjLogColumnCompression: opts.DataObjLogColumnCompression},
 	}
 }
 

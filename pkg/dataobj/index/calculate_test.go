@@ -584,3 +584,7 @@ func TestCalculator_Calculate_StreamsLayout(t *testing.T) {
 		require.ErrorContains(t, err, "records no layout")
 	})
 }
+
+func (fakeLimits) DataObjLogColumnCompression(string) logs.EncodingType {
+	return logs.EncodingTypePlain
+}

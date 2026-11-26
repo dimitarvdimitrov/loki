@@ -530,3 +530,11 @@ The explorer provides a web UI for browsing data objects:
 # Access UI
 curl http://localhost:3100/dataobj/api/v1/list
 ```
+
+
+### Message encoding
+
+Message columns use PLAIN values with Zstd compression by default.
+The tenant override `dataobj_log_column_compression: fsst` selects FSST without outer compression.
+FSST pages contain a symbol table and a directory of string offsets and decoded lengths.
+Readers decode the requested batch of values from each page.

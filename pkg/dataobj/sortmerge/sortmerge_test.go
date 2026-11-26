@@ -279,3 +279,7 @@ func recOrder(a, b logs.Record) int {
 	}
 	return cmp.Compare(b.Timestamp.UnixNano(), a.Timestamp.UnixNano())
 }
+
+func (schemaOverrides) DataObjLogColumnCompression(string) logs.EncodingType {
+	return logs.EncodingTypePlain
+}

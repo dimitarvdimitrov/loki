@@ -134,6 +134,7 @@ func (cfg *BuilderBaseConfig) Validate() error {
 // Builder reads it once per object, for its own tenant.
 type TenantOverrides interface {
 	SortSchemaLabels(tenant string) []string
+	DataObjLogColumnCompression(tenant string) logs.EncodingType
 
 	// DataObjShardLayout returns the shard layout for the streams of the tenant in a new object.
 	DataObjShardLayout(tenant string) streams.ShardLayout
@@ -142,6 +143,11 @@ type TenantOverrides interface {
 // NoTenantOverrides is a [TenantOverrides] that overrides nothing. Every tenant has no sort schema
 // labels and the default shard layout.
 type NoTenantOverrides struct{}
+
+// DataObjLogColumnCompression returns PLAIN with Zstd compression.
+func (NoTenantOverrides) DataObjLogColumnCompression(string) logs.EncodingType {
+	return logs.EncodingTypePlain
+}
 
 // SortSchemaLabels returns no schema labels.
 func (NoTenantOverrides) SortSchemaLabels(string) []string { return nil }
@@ -177,7 +183,8 @@ type Builder struct {
 	// object reads it from the overrides, and Reset clears it, so a limits
 	// change applies from the next object. It is valid only while streams is
 	// not nil.
-	layout streams.Layout
+	layout          streams.Layout
+	messageEncoding logs.EncodingType
 
 	// lastTarget is the target of the last appended stream, or nil. Callers
 	// append many records of one stream in a row, so the builder resolves a
@@ -268,6 +275,7 @@ func (b *Builder) init() {
 		return
 	}
 
+	b.messageEncoding = b.overrides.DataObjLogColumnCompression(b.tenant)
 	b.layout = streams.NewLayout(b.overrides.DataObjShardLayout(b.tenant), b.overrides.SortSchemaLabels(b.tenant))
 
 	b.streams = streams.NewBuilder(b.metrics.streams, int(b.cfg.TargetPageSize), b.cfg.MaxPageRows, b.layout.ShardLayout())
@@ -276,14 +284,15 @@ func (b *Builder) init() {
 	// SortSchemaASC does not support AppendUnordered, because stripe merging
 	// cannot use schema keys. Force AppendOrdered.
 	b.logs = logs.NewBuilder(b.metrics.logs, logs.BuilderOptions{
-		PageSizeHint:              int(b.cfg.TargetPageSize),
-		PageMaxRowCount:           b.cfg.MaxPageRows,
-		BufferSize:                int(b.cfg.BufferSize),
-		StripeMergeLimit:          b.cfg.SectionStripeMergeLimit,
-		AppendStrategy:            logs.AppendOrdered,
-		EstimatedCompressionRatio: b.cfg.EstimatedCompressionRatio,
-		SortOrder:                 logs.SortSchemaASC,
-		DropDuplicates:            b.cfg.DropDuplicates,
+		PageSizeHint:                int(b.cfg.TargetPageSize),
+		PageMaxRowCount:             b.cfg.MaxPageRows,
+		BufferSize:                  int(b.cfg.BufferSize),
+		StripeMergeLimit:            b.cfg.SectionStripeMergeLimit,
+		AppendStrategy:              logs.AppendOrdered,
+		EstimatedCompressionRatio:   b.cfg.EstimatedCompressionRatio,
+		SortOrder:                   logs.SortSchemaASC,
+		DropDuplicates:              b.cfg.DropDuplicates,
+		DataObjLogColumnCompression: b.messageEncoding,
 	})
 	b.logs.SetTenant(b.tenant)
 }
